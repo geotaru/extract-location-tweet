@@ -69,31 +69,10 @@ func main() {
 	}()
 
 	log.Println("プログラム開始")
-	var inputDir = flag.String("in", "./input/", "input directory")
-	var outputDir = flag.String("out", "./output/", "output directory")
-	flag.Parse()
-	log.Println("flag処理 inputDir" + *inputDir)
-	log.Println("flag処理 outputDir" + *outputDir)
-	/*
-		シリアライズされた地名辞書をデコードする
-	*/
-	// 辞書を読み込む
-	dictPath = "./geo_dict.json"
-	file, err := os.Open(dictPath)
-	if err != nil {
-		log.Fatal("ファイルを開けませんでした 辞書のパス: " + dictPath)
-	}
-	defer file.Close()
-
-	// 地名と緯度経度の変換辞書jsonをデコード
-	dec := json.NewDecoder(file)
-	decerr := dec.Decode(&geoDict)
-	if decerr != nil {
-		log.Fatal("failed to decode json: path" + dictPath)
-	}
-	for key, value := range geoDict {
-		geoDictSync.Store(key, value)
-	}
+	// オプションをロード
+	inputDir, outputDir, convertDict, mecabDict = flagParser()
+	// 辞書のロード
+	geoDictSync = loadLocationDict(convertDict)
 	defer DumpDict()
 
 	var apiDone = make(chan string) // Google APIへのアクセスの終了通知用のチャネル
@@ -149,7 +128,6 @@ func main() {
 
 	// MeCabの準備
 	model, err := mecab.NewModel(map[string]string{"dicdir": "/usr/lib64/mecab/dic/mecab-ipadic-neologd", "output-format-type": "chasen"})
-	// model, err := mecab.NewModel(map[string]string{"dicdir": "/usr/lib/x86_64-linux-gnu/mecab/dic/mecab-ipadic-neologd", "output-format-type": "chasen"})
 
 	if err != nil {
 		panic(err)
