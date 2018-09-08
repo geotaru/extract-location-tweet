@@ -23,10 +23,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"time"
 
 	"golang.org/x/net/context"
 	"golang.org/x/net/context/ctxhttp"
+	"golang.org/x/time/rate"
 	"googlemaps.github.io/maps/internal"
 )
 
@@ -38,7 +38,7 @@ type Client struct {
 	clientID          string
 	signature         []byte
 	requestsPerSecond int
-	rateLimiter       chan int
+	rateLimiter       *rate.Limiter
 	channel           string
 }
 
@@ -47,7 +47,8 @@ type ClientOption func(*Client) error
 
 var defaultRequestsPerSecond = 50
 
-// NewClient constructs a new Client which can make requests to the Google Maps WebService APIs.
+// NewClient constructs a new Client which can make requests to the Google Maps
+// WebService APIs.
 func NewClient(options ...ClientOption) (*Client, error) {
 	c := &Client{requestsPerSecond: defaultRequestsPerSecond}
 	WithHTTPClient(&http.Client{})(c)
@@ -62,27 +63,14 @@ func NewClient(options ...ClientOption) (*Client, error) {
 	}
 
 	if c.requestsPerSecond > 0 {
-		// Implement a bursty rate limiter.
-		// Allow up to 1 second worth of requests to be made at once.
-		c.rateLimiter = make(chan int, c.requestsPerSecond)
-		// Prefill rateLimiter with 1 seconds worth of requests.
-		for i := 0; i < c.requestsPerSecond; i++ {
-			c.rateLimiter <- 1
-		}
-		go func() {
-			// Wait a second for pre-filled quota to drain
-			time.Sleep(time.Second)
-			// Then, refill rateLimiter continuously
-			for range time.Tick(time.Second / time.Duration(c.requestsPerSecond)) {
-				c.rateLimiter <- 1
-			}
-		}()
+		c.rateLimiter = rate.NewLimiter(rate.Limit(c.requestsPerSecond), c.requestsPerSecond)
 	}
 
 	return c, nil
 }
 
-// WithHTTPClient configures a Maps API client with a http.Client to make requests over.
+// WithHTTPClient configures a Maps API client with a http.Client to make requests
+// over.
 func WithHTTPClient(c *http.Client) ClientOption {
 	return func(client *Client) error {
 		if _, ok := c.Transport.(*transport); !ok {
@@ -122,8 +110,8 @@ func WithChannel(channel string) ClientOption {
 	}
 }
 
-// WithClientIDAndSignature configures a Maps API client for a Maps for Work application
-// The signature is assumed to be URL modified Base64 encoded
+// WithClientIDAndSignature configures a Maps API client for a Maps for Work
+// application. The signature is assumed to be URL modified Base64 encoded.
 func WithClientIDAndSignature(clientID, signature string) ClientOption {
 	return func(c *Client) error {
 		c.clientID = clientID
@@ -159,13 +147,7 @@ func (c *Client) awaitRateLimiter(ctx context.Context) error {
 	if c.rateLimiter == nil {
 		return nil
 	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-c.rateLimiter:
-		// Execute request.
-		return nil
-	}
+	return c.rateLimiter.Wait(ctx)
 }
 
 func (c *Client) get(ctx context.Context, config *apiConfig, apiReq apiRequest) (*http.Response, error) {

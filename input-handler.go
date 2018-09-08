@@ -3,9 +3,48 @@ package main
 import (
 	"archive/zip"
 	"encoding/json"
+	"flag"
 	"io"
 	"log"
+	"os"
+	"sync"
 )
+
+func flagParser() (string, string, string, string) {
+	/*
+		Flagを読み込む
+	*/
+	var inputDir = flag.String("in", "./input/", "input directory")
+	var outputDir = flag.String("out", "./output/", "output directory")
+	var convertDict = flag.String("c", "./geo_dict.json", "dictionary path for converting place name into latitude and longitude")
+	var mecabDict = flag.String("m", "", "dictionary path for MeCab")
+	flag.Parse()
+	return *inputDir, *outputDir, *convertDict, *mecabDict
+}
+
+func loadLocationDict(dictPath string) sync.Map {
+	/*
+		地名をkey，[緯度, 経度]をvalueとする辞書を読み込む
+	*/
+	// 辞書を読み込む
+	file, err := os.Open(dictPath)
+	if err != nil {
+		log.Fatal("Failed to open file: " + dictPath)
+	}
+	defer file.Close()
+
+	// 地名と緯度経度の変換辞書jsonをデコード
+	dec := json.NewDecoder(file)
+	decerr := dec.Decode(&geoDict)
+	if decerr != nil {
+		log.Fatal("Failed to decode json: path" + dictPath)
+	}
+	var gd sync.Map
+	for key, value := range geoDict {
+		gd.Store(key, value)
+	}
+	return gd
+}
 
 func unzip(filename string) ([]Tweet, error) {
 	/*

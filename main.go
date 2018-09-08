@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"compress/gzip"
 	"encoding/json"
-	"flag"
 	"fmt" // for profile
 	"log"
 	"net/http"         // for profile
@@ -17,8 +16,6 @@ import (
 	"time"
 
 	"github.com/shogo82148/go-mecab"
-	"golang.org/x/net/context"
-	"googlemaps.github.io/maps"
 )
 
 type Tweet struct {
@@ -55,7 +52,6 @@ type GT struct {
 var (
 	geoDict     map[string][2]float64
 	geoDictSync sync.Map
-	dictPath    string
 	freezeAPI   bool
 	overLimit   sync.Mutex
 	tagger      mecab.MeCab
@@ -67,34 +63,11 @@ func main() {
 	go func() {
 		fmt.Println(http.ListenAndServe("localhost:6060", nil))
 	}()
-
-	log.Println("プログラム開始")
-	var inputDir = flag.String("in", "./input/", "input directory")
-	var outputDir = flag.String("out", "./output/", "output directory")
-	flag.Parse()
-	log.Println("flag処理 inputDir" + *inputDir)
-	log.Println("flag処理 outputDir" + *outputDir)
-	/*
-		シリアライズされた地名辞書をデコードする
-	*/
-	// 辞書を読み込む
-	dictPath = "./geo_dict.json"
-	file, err := os.Open(dictPath)
-	if err != nil {
-		log.Fatal("ファイルを開けませんでした 辞書のパス: " + dictPath)
-	}
-	defer file.Close()
-
-	// 地名と緯度経度の変換辞書jsonをデコード
-	dec := json.NewDecoder(file)
-	decerr := dec.Decode(&geoDict)
-	if decerr != nil {
-		log.Fatal("failed to decode json: path" + dictPath)
-	}
-	for key, value := range geoDict {
-		geoDictSync.Store(key, value)
-	}
-	defer DumpDict()
+	// オプションをロード
+	inputDir, outputDir, convertDict, mecabDict := flagParser()
+	// 辞書のロード
+	geoDictSync = loadLocationDict(convertDict)
+	defer DumpDict(convertDict)
 
 	var apiDone = make(chan string) // Google APIへのアクセスの終了通知用のチャネル
 
@@ -113,10 +86,10 @@ func main() {
 			select {
 			case gt := <-rec:
 				// Gzipファイルに追記
-				writeGzFile(gt, *outputDir)
+				writeGzFile(gt, outputDir)
 			case <-ticker.C:
 				// 辞書の定期保存(1時間ごとに辞書を保存する)
-				DumpDict()
+				DumpDict(convertDict)
 			case <-apiDone:
 				isFinished = true
 			default:
@@ -148,8 +121,7 @@ func main() {
 	key := apiKeys[0]
 
 	// MeCabの準備
-	model, err := mecab.NewModel(map[string]string{"dicdir": "/usr/lib64/mecab/dic/mecab-ipadic-neologd", "output-format-type": "chasen"})
-	// model, err := mecab.NewModel(map[string]string{"dicdir": "/usr/lib/x86_64-linux-gnu/mecab/dic/mecab-ipadic-neologd", "output-format-type": "chasen"})
+	model, err := mecab.NewModel(map[string]string{"dicdir": mecabDict, "output-format-type": "chasen"})
 
 	if err != nil {
 		panic(err)
@@ -200,7 +172,7 @@ func main() {
 
 	log.Println("ファイルのサーチを開始")
 	// 指定したディレクトリの下のすべてのファイルに対してTweetのデータを抜き取る
-	werr := filepath.Walk(*inputDir, func(path string, info os.FileInfo, err error) error {
+	werr := filepath.Walk(inputDir, func(path string, info os.FileInfo, err error) error {
 		if info.IsDir() {
 			return nil
 		}
@@ -341,157 +313,11 @@ func parseTweet(ScreenName string, tweets []Tweet, key string, tagger mecab.MeCa
 	return
 }
 
-func HandleAPI(ch chan GeoTweet, apikey string, parseDone chan string, apiDone chan string, apiGT chan GT) {
-	finish := false
-	var wg sync.WaitGroup
-FILEPARSE_FOR:
-	for {
-		select {
-		case geotweet := <-apiGT:
-			wg.Add(1)
-			// API制限にすでに達している場合
-			if freezeAPI == true {
-				for {
-					log.Println("WARN: API制限にすでに達しています。120秒後に再確認します。  placename: " + geotweet.Placename)
-					time.Sleep(120 * time.Second)
-					if freezeAPI == false {
-						break
-					}
-				}
-			}
-			// 地名をGoogle Maps APIで変換する
-			log.Println("Google APIを使用します")
-			go AccessGoogleGeocodingAPI(geotweet.GT, geotweet.Placename, apikey, ch, &wg)
-			time.Sleep(200 * time.Millisecond)
-		case <-parseDone:
-			// ファイルのパースが終了
-			finish = true
-		default:
-			if (finish == true) && (len(apiGT) == 0) {
-				log.Println("Info: Google APIへの通信終了を待っています")
-				break FILEPARSE_FOR
-			}
-		}
-	}
-	wg.Wait()
-	log.Println("finish accessing google api")
-	// API終了通知
-	apiDone <- "apiFinished"
-	return
-}
-
-func AccessGoogleGeocodingAPI(t GeoTweet, placename string, apiKey string, ch chan GeoTweet, wg *sync.WaitGroup) {
-	/*
-		地名とAPIKeyを受け取り、緯度／経度とerrorを返す
-		地名をGoogle Maps Geocoding APIで緯度経度に変換する
-	*/
-	c, err := maps.NewClient(maps.WithAPIKey(apiKey))
+func DumpDict(convertDict string) {
+	os.Rename(convertDict, convertDict+".backup")
+	f, err := os.Create(convertDict)
 	if err != nil {
-		log.Println("API key が間違っている可能性があります")
-	}
-	r := &maps.GeocodingRequest{
-		Address:    placename,
-		Region:     "jp",
-		Language:   "ja",
-		Components: map[maps.Component]string{"country": "Japan"},
-	}
-	result, err := c.Geocode(context.Background(), r)
-	switch {
-	case err != nil:
-		// API制限に引っかかったなどのエラー処理
-		// バッドノウハウかもしれないが、エラーメッセージを解析する以外に方法がわからなかった
-		err_message := err.Error()
-		switch {
-		case strings.Contains(err_message, "OVER_QUERY_LIMIT"):
-			// OVER QUERY LIMIT
-			log.Println(err_message)
-			if freezeAPI != true {
-				freezeAPI = true
-			}
-			overLimit.Lock()
-			time.Sleep(300 * time.Second)
-			AccessGoogleGeocodingAPI(t, placename, apiKey, ch, wg)
-			freezeAPI = false
-			overLimit.Unlock()
-			log.Println("Restart to request Google API")
-		case strings.Contains(err_message, "REQUEST_DENIED"):
-			log.Println(err_message)
-			time.Sleep(60 * time.Second)
-			AccessGoogleGeocodingAPI(t, placename, apiKey, ch, wg)
-		case strings.Contains(err_message, "UNKNOWN_ERROR"):
-			log.Println(err_message)
-			time.Sleep(10 * time.Second)
-			AccessGoogleGeocodingAPI(t, placename, apiKey, ch, wg)
-		default:
-			log.Println(err_message)
-			time.Sleep(10 * time.Second)
-			AccessGoogleGeocodingAPI(t, placename, apiKey, ch, wg)
-		}
-	case len(result) > 0:
-		freezeAPI = false
-		lat := result[0].Geometry.Location.Lat
-		lng := result[0].Geometry.Location.Lng
-		coordinate := [2]float64{lat, lng}
-		// 辞書を更新
-		log.Println("辞書の更新: 地名 " + placename)
-		geoDictSync.Store(placename, coordinate)
-		t.Coordinate = coordinate
-		t.PlaceName = placename
-		ch <- t
-		wg.Done()
-	case len(result) == 0:
-		freezeAPI = false
-		// 何もかえってこなかった status ZERO_RESULTS
-		coordinate := [2]float64{0, 0}
-		// 辞書を更新
-		log.Println("辞書の更新, ZERO_RESULTS 地名: " + placename)
-		geoDictSync.Store(placename, coordinate)
-		wg.Done()
-	}
-	return
-}
-
-func ExtractPlaceName(tagger mecab.MeCab, text string) []string {
-	// MeCabによる地名抽出(Neologd使用)
-
-	var geos []string
-	// 解析器の作成
-	lattice, err := mecab.NewLattice()
-	if err != nil {
-		log.Println("Error: MeCab パースに失敗")
-		log.Println(err)
-		var nilarr = []string{}
-		return nilarr
-	}
-	defer lattice.Destroy()
-
-	lattice.SetSentence(text)
-	// 解析
-	terr := tagger.ParseLattice(lattice)
-	if terr != nil {
-		panic(err)
-	}
-	result := lattice.String()
-
-	// 地名を抜き出す
-	for _, row := range strings.Split(result, "\n") {
-		r := strings.Split(row, ",")
-		if len(r) != 1 {
-			if (r[1] == "固有名詞") && (r[2] == "地域") && (r[3] == "一般") {
-				rr := strings.Split(r[0], "\t")
-				// 地名を配列に追加
-				geos = append(geos, rr[0])
-			}
-		}
-	}
-	return geos
-}
-
-func DumpDict() {
-	os.Rename(dictPath, dictPath+".backup")
-	f, err := os.Create(dictPath)
-	if err != nil {
-		log.Println("Error: failed to open file  path = " + dictPath)
+		log.Println("Error: failed to open file  path = " + convertDict)
 	}
 	defer f.Close()
 	enc := json.NewEncoder(f)
