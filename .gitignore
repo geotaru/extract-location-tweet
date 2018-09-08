@@ -5,6 +5,8 @@ result/*
 *.bk
 /geo_dict.json
 /geo_dict.json.backup
+/extract-location-tweet
+/run.sh
 
 ### https://raw.github.com/github/gitignore/90cb995068518f26e3c1305401ffa9e4ae8b110b/Go.gitignore
 
