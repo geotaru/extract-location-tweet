@@ -2,32 +2,58 @@
 
 
 [[projects]]
+  digest = "1:3a26588bc48b96825977c1b3df964f8fd842cd6860cc26370588d3563433cf11"
+  name = "github.com/google/uuid"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "d460ce9f8df2e77fb1ba55ca87fafed96c607494"
+  version = "v1.0.0"
+
+[[projects]]
   branch = "master"
+  digest = "1:9fef8a6378db6d9aa52c7da5a7be501899e09d5681e69a528e484ba09e00de4d"
   name = "github.com/shogo82148/go-mecab"
   packages = ["."]
+  pruneopts = "UT"
   revision = "d8f46400baf58d6ab5cd2547631d0dea9e2b42d2"
 
 [[projects]]
   branch = "master"
+  digest = "1:d6b719875cf8091fbab38527d81d34e71f4521b9ee9ccfbd4a32cff2ac5af96e"
   name = "golang.org/x/net"
   packages = [
     "context",
-    "context/ctxhttp"
+    "context/ctxhttp",
   ]
-  revision = "2fb46b16b8dda405028c50f7c7f0f9dd1fa6bfb1"
+  pruneopts = "UT"
+  revision = "161cd47e91fd58ac17490ef4d742dc98bb4cf60e"
 
 [[projects]]
   branch = "master"
+  digest = "1:c9e7a4b4d47c0ed205d257648b0e5b0440880cb728506e318f8ac7cd36270bc4"
+  name = "golang.org/x/time"
+  packages = ["rate"]
+  pruneopts = "UT"
+  revision = "fbb02b2291d28baffd63558aa44b4b56f178d650"
+
+[[projects]]
+  branch = "master"
+  digest = "1:6869343d13954f9347a06e6461c796c702d10c4d4013031b5e7443f5defc1f9e"
   name = "googlemaps.github.io/maps"
   packages = [
     ".",
-    "internal"
+    "internal",
   ]
-  revision = "61301add2e62745d65ac52712e30f68faeabfc8b"
+  pruneopts = "UT"
+  revision = "bc340667705ea9c00e1c2ac35d01cba260945f41"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "22cc7f42371be40147c70131e79c625603490ee847c713f188ebe2125928c36b"
+  input-imports = [
+    "github.com/shogo82148/go-mecab",
+    "golang.org/x/net/context",
+    "googlemaps.github.io/maps",
+  ]
   solver-name = "gps-cdcl"
   solver-version = 1

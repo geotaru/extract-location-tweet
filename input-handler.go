@@ -3,8 +3,10 @@ package main
 import (
 	"archive/zip"
 	"encoding/json"
+	"flag"
 	"io"
 	"log"
+	"os"
 	"sync"
 )
 
@@ -17,7 +19,7 @@ func flagParser() (string, string, string, string) {
 	var convertDict = flag.String("c", "./geo_dict.json", "dictionary path for converting place name into latitude and longitude")
 	var mecabDict = flag.String("m", "", "dictionary path for MeCab")
 	flag.Parse()
-	return *inputDir, *ouputDir, *convertDict, *mecabDict
+	return *inputDir, *outputDir, *convertDict, *mecabDict
 }
 
 func loadLocationDict(dictPath string) sync.Map {
@@ -27,7 +29,7 @@ func loadLocationDict(dictPath string) sync.Map {
 	// 辞書を読み込む
 	file, err := os.Open(dictPath)
 	if err != nil {
-		log.Fatal("Failed to open file: " + DictPath)
+		log.Fatal("Failed to open file: " + dictPath)
 	}
 	defer file.Close()
 
@@ -35,9 +37,9 @@ func loadLocationDict(dictPath string) sync.Map {
 	dec := json.NewDecoder(file)
 	decerr := dec.Decode(&geoDict)
 	if decerr != nil {
-		log.Fatal("Failed to decode json: path" + convertDict)
+		log.Fatal("Failed to decode json: path" + dictPath)
 	}
-	var gd sys.Map
+	var gd sync.Map
 	for key, value := range geoDict {
 		gd.Store(key, value)
 	}

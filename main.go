@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"compress/gzip"
 	"encoding/json"
-	"flag"
 	"fmt" // for profile
 	"log"
 	"net/http"         // for profile
@@ -55,7 +54,6 @@ type GT struct {
 var (
 	geoDict     map[string][2]float64
 	geoDictSync sync.Map
-	dictPath    string
 	freezeAPI   bool
 	overLimit   sync.Mutex
 	tagger      mecab.MeCab
@@ -67,13 +65,11 @@ func main() {
 	go func() {
 		fmt.Println(http.ListenAndServe("localhost:6060", nil))
 	}()
-
-	log.Println("プログラム開始")
 	// オプションをロード
-	inputDir, outputDir, convertDict, mecabDict = flagParser()
+	inputDir, outputDir, convertDict, mecabDict := flagParser()
 	// 辞書のロード
 	geoDictSync = loadLocationDict(convertDict)
-	defer DumpDict()
+	defer DumpDict(convertDict)
 
 	var apiDone = make(chan string) // Google APIへのアクセスの終了通知用のチャネル
 
@@ -92,10 +88,10 @@ func main() {
 			select {
 			case gt := <-rec:
 				// Gzipファイルに追記
-				writeGzFile(gt, *outputDir)
+				writeGzFile(gt, outputDir)
 			case <-ticker.C:
 				// 辞書の定期保存(1時間ごとに辞書を保存する)
-				DumpDict()
+				DumpDict(convertDict)
 			case <-apiDone:
 				isFinished = true
 			default:
@@ -127,7 +123,7 @@ func main() {
 	key := apiKeys[0]
 
 	// MeCabの準備
-	model, err := mecab.NewModel(map[string]string{"dicdir": "/usr/lib64/mecab/dic/mecab-ipadic-neologd", "output-format-type": "chasen"})
+	model, err := mecab.NewModel(map[string]string{"dicdir": mecabDict, "output-format-type": "chasen"})
 
 	if err != nil {
 		panic(err)
@@ -178,7 +174,7 @@ func main() {
 
 	log.Println("ファイルのサーチを開始")
 	// 指定したディレクトリの下のすべてのファイルに対してTweetのデータを抜き取る
-	werr := filepath.Walk(*inputDir, func(path string, info os.FileInfo, err error) error {
+	werr := filepath.Walk(inputDir, func(path string, info os.FileInfo, err error) error {
 		if info.IsDir() {
 			return nil
 		}
@@ -465,11 +461,11 @@ func ExtractPlaceName(tagger mecab.MeCab, text string) []string {
 	return geos
 }
 
-func DumpDict() {
-	os.Rename(dictPath, dictPath+".backup")
-	f, err := os.Create(dictPath)
+func DumpDict(convertDict string) {
+	os.Rename(convertDict, convertDict+".backup")
+	f, err := os.Create(convertDict)
 	if err != nil {
-		log.Println("Error: failed to open file  path = " + dictPath)
+		log.Println("Error: failed to open file  path = " + convertDict)
 	}
 	defer f.Close()
 	enc := json.NewEncoder(f)
