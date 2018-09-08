@@ -19,7 +19,7 @@ func flagParser() (string, string, string, string) {
 	var convertDict = flag.String("c", "./geo_dict.json", "dictionary path for converting place name into latitude and longitude")
 	var mecabDict = flag.String("m", "", "dictionary path for MeCab")
 	flag.Parse()
-	return *inputDir, *outputDir, *convertDict, *mecabDict
+	return *inputDir + "/", *outputDir + "/", *convertDict, *mecabDict
 }
 
 func loadLocationDict(dictPath string) sync.Map {
