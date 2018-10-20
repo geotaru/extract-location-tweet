@@ -10,7 +10,9 @@ import (
 	"sync"
 )
 
-func flagParser() (string, string, string, string) {
+var geoDict map[string][2]float64
+
+func FlagParser() (string, string, string, string) {
 	/*
 		Flagを読み込む
 	*/
@@ -22,7 +24,7 @@ func flagParser() (string, string, string, string) {
 	return *inputDir + "/", *outputDir + "/", *convertDict, *mecabDict
 }
 
-func loadLocationDict(dictPath string) sync.Map {
+func LoadLocationDict(dictPath string) sync.Map {
 	/*
 		地名をkey，[緯度, 経度]をvalueとする辞書を読み込む
 	*/
@@ -66,7 +68,7 @@ func unzip(filename string) ([]Tweet, error) {
 		return nil, err
 	}
 	defer rc.Close()
-	tweets, err := Extract(rc)
+	tweets, err := extract(rc)
 	// not passed
 	if err != nil {
 		log.Println(err)
@@ -75,7 +77,7 @@ func unzip(filename string) ([]Tweet, error) {
 	return tweets, nil
 }
 
-func Extract(jsonfile io.Reader) ([]Tweet, error) {
+func extract(jsonfile io.Reader) ([]Tweet, error) {
 	// zipファイルの中身のJSONファイルをデコード
 	dec := json.NewDecoder(jsonfile)
 	// 最初の'['を読み取る
